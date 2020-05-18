@@ -123,17 +123,16 @@ class App extends Component {
     super(...args);
 
     this.state = {
-      tabs: [],
       windows: [],
       filter: '',
-      filteredTabs: [],
       filteredWindows: [],
     }
 
     let windowTypes = Object.values(chrome.windows.WindowType);
     ext.windows.getAll({ populate: true, windowTypes }, this.handleInitialWindows.bind(this));
 
-    ext.tabs.onRemoved.addListener((...args) => this.handleTabRemoved(...args))
+    ext.tabs.onRemoved.addListener(this.handleTabRemoved.bind(this));
+    ext.tabs.onUpdated.addListener(this.handleTabUpdated.bind(this));
   }
 
   handleInitialWindows(windows) {
@@ -141,12 +140,25 @@ class App extends Component {
   }
 
   handleTabRemoved(tabId, {windowId, isWindowClosing}) {
-    let tabs = [...this.state.tabs];
-    let index = tabs.findIndex(i => i.id > 2600)
-    tabs.splice(index, 1);
+    let windows = [...this.state.windows];
+    let windowIndex = windows.findIndex(w => w.id === windowId);
+    let window = {...windows[windowIndex]};
+    windows[windowIndex] = window;  
+    let tabIndex = window.tabs.findIndex(t => t.id === tabId);
+    let tabs = [...window.tabs];
+    window.tabs = tabs;
+    window.tabs.splice(tabIndex, 1);
 
-    this.setState({tabs});
-    this.filterWindowsAndTabs(this.state.filter);
+    if (window.tabs.length === 0) {
+      windows.splice(windowIndex, 1);
+    }
+
+    this.setState({windows});
+  }
+
+  handleTabUpdated(tabId, changeInfo, tab) {
+    let windows = [...this.state.windows];
+    this.setState({windows});
   }
 
   fuzzySearch(tab, searchString) {
@@ -177,16 +189,16 @@ class App extends Component {
       return windowClone;
     }).filter(window => window.tabs.length);
 
-    this.setState({ filteredWindows });
+    return filteredWindows;
   }
 
   handleFuzzyFilterUpdate(e) {
     let filter = e.srcElement.value;
     this.setState({filter});
-    this.filterWindowsAndTabs(filter);
   }
 
-  render(props, { filteredWindows, windows }) {
+  render(props, { windows, filter }) {
+    let filteredWindows = this.filterWindowsAndTabs(filter);
     let tabCount = filteredWindows.reduce((acc, window) => acc + window.tabs.length, 0);
     let windowCount = windows.length;
     let tabsPerWindow = tabCount.length / windowCount;
