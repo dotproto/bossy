@@ -125,40 +125,21 @@ class App extends Component {
     this.state = {
       windows: [],
       filter: '',
-      filteredWindows: [],
     }
 
-    let windowTypes = Object.values(chrome.windows.WindowType);
-    ext.windows.getAll({ populate: true, windowTypes }, this.handleInitialWindows.bind(this));
+    this.windowTypes = Object.values(chrome.windows.WindowType);
+    this.handleInitialWindows = (windows) => this.setState({ windows });
 
-    ext.tabs.onRemoved.addListener(this.handleTabRemoved.bind(this));
-    ext.tabs.onUpdated.addListener(this.handleTabUpdated.bind(this));
+    this.initializeWindows();
+    ext.tabs.onRemoved.addListener(() => this.initializeWindows());
+    ext.tabs.onUpdated.addListener(() => this.initializeWindows());
+    ext.tabs.onMoved.addListener(() => this.initializeWindows());
+    ext.tabs.onDetached.addListener(() => this.initializeWindows());
   }
 
-  handleInitialWindows(windows) {
-    this.setState({windows, filteredWindows: [...windows]});
-  }
-
-  handleTabRemoved(tabId, {windowId, isWindowClosing}) {
-    let windows = [...this.state.windows];
-    let windowIndex = windows.findIndex(w => w.id === windowId);
-    let window = {...windows[windowIndex]};
-    windows[windowIndex] = window;  
-    let tabIndex = window.tabs.findIndex(t => t.id === tabId);
-    let tabs = [...window.tabs];
-    window.tabs = tabs;
-    window.tabs.splice(tabIndex, 1);
-
-    if (window.tabs.length === 0) {
-      windows.splice(windowIndex, 1);
-    }
-
-    this.setState({windows});
-  }
-
-  handleTabUpdated(tabId, changeInfo, tab) {
-    let windows = [...this.state.windows];
-    this.setState({windows});
+  initializeWindows() {
+    ext.windows.getAll({ populate: true, windowTypes: this.windowTypes },
+                         this.handleInitialWindows);
   }
 
   fuzzySearch(tab, searchString) {
@@ -200,8 +181,8 @@ class App extends Component {
   render(props, { windows, filter }) {
     let filteredWindows = this.filterWindowsAndTabs(filter);
     let tabCount = filteredWindows.reduce((acc, window) => acc + window.tabs.length, 0);
-    let windowCount = windows.length;
-    let tabsPerWindow = tabCount.length / windowCount;
+    let windowCount = filteredWindows.length;
+    let tabsPerWindow = tabCount / windowCount;
 
     return html`
       <main>
@@ -211,10 +192,6 @@ class App extends Component {
         <${WindowList} windows=${filteredWindows} />
       </main>
     `;
-
-    // <${FuzzyFilter} onInput=${e => this.handleFuzzyFilterUpdate(e)}/>
-    // <p>${filteredTabs.length} tabs across ${windowSize} windows (${tabsPerWindow.toFixed(1)} tpw)</p>
-    // <${WindowList} ...${{windows: filteredWindows}} />
   }
 }
 
