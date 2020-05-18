@@ -106,7 +106,7 @@ const Window = (window) => html`
 
 const WindowList = ({windows}) => html`
   <div>
-    ${Array.from(windows).map(([id, tabs]) => html`
+    ${windows.map(({id, tabs}) => html`
       <${Window} ...${{id, tabs}} />
     `)}
   </div>
@@ -118,38 +118,26 @@ const FuzzyFilter = ({onInput}) => {
   `;
 };
 
-// class FuzzyFilter extends Component {
-
-//   handleValueUpdate()
-
-//   render() {
-//     return html`
-//       <input type="text" id="fuzzy-filter" autofocus value="test" />
-//     `;
-//   }
-// }
-
-
 class App extends Component {
-  constructor()  {
-    super();
+  constructor(...args)  {
+    super(...args);
 
     this.state = {
       tabs: [],
       windows: [],
       filter: '',
       filteredTabs: [],
-      filteredWindows: []
+      filteredWindows: [],
     }
 
-    ext.tabs.query({}, (...args) => this.handleTabListInitialization(...args));
+    let windowTypes = Object.values(chrome.windows.WindowType);
+    ext.windows.getAll({ populate: true, windowTypes }, this.handleInitialWindows.bind(this));
 
     ext.tabs.onRemoved.addListener((...args) => this.handleTabRemoved(...args))
   }
 
-  handleTabListInitialization(tabs) {
-    let windows = this.reduceWindows(tabs);
-    this.setState({ tabs, windows, filteredTabs: tabs, filteredWindows: windows });
+  handleInitialWindows(windows) {
+    this.setState({windows, filteredWindows: [...windows]});
   }
 
   handleTabRemoved(tabId, {windowId, isWindowClosing}) {
@@ -158,21 +146,7 @@ class App extends Component {
     tabs.splice(index, 1);
 
     this.setState({tabs});
-    this.filterTabs(this.state.filter);
-  }
-
-  reduceWindows(tabs) {
-    return tabs.reduce((acc, tab) => {
-      let window;
-      if (acc.has(tab.windowId)) {
-        window = acc.get(tab.windowId);
-      } else {
-        window = new Set();
-        acc.set(tab.windowId, window);
-      }
-      window.add(tab);
-      return acc;
-    }, new Map());
+    this.filterWindowsAndTabs(this.state.filter);
   }
 
   fuzzySearch(tab, searchString) {
@@ -193,31 +167,42 @@ class App extends Component {
     return !miss;
   }
 
-  filterTabs(filterString) {
-    let filteredTabs = this.state.tabs.filter(tab => this.fuzzySearch(tab, filterString));
+  filterWindowsAndTabs(filterString) {
+    let filteredWindows = this.state.windows.map(window => {
+      let windowTabs = window.tabs.filter(tab => this.fuzzySearch(tab, filterString));
+      let windowClone = {
+        id: window.id,
+        tabs: windowTabs,
+      };
+      return windowClone;
+    }).filter(window => window.tabs.length);
 
-    let filteredWindows = this.reduceWindows(filteredTabs);
-    this.setState({filteredTabs, filteredWindows});
+    this.setState({ filteredWindows });
   }
 
   handleFuzzyFilterUpdate(e) {
     let filter = e.srcElement.value;
     this.setState({filter});
-    this.filterTabs(filter);
+    this.filterWindowsAndTabs(filter);
   }
 
-  render(props, { filteredTabs, filteredWindows }) {
-    let windowSize = filteredWindows.size;
-    let tabsPerWindow = filteredTabs.length / windowSize;
+  render(props, { filteredWindows, windows }) {
+    let tabCount = filteredWindows.reduce((acc, window) => acc + window.tabs.length, 0);
+    let windowCount = windows.length;
+    let tabsPerWindow = tabCount.length / windowCount;
 
     return html`
       <main>
         <${FuzzyFilter} onInput=${e => this.handleFuzzyFilterUpdate(e)}/>
-        <p>${filteredTabs.length} tabs across ${windowSize} windows (${tabsPerWindow.toFixed(1)} tpw)</p>
+        <p>${tabCount} tabs across ${windowCount} windows (${tabsPerWindow.toFixed(1)} tpw)</p>
 
-        <${WindowList} ...${{windows: filteredWindows}} />
+        <${WindowList} windows=${filteredWindows} />
       </main>
     `;
+
+    // <${FuzzyFilter} onInput=${e => this.handleFuzzyFilterUpdate(e)}/>
+    // <p>${filteredTabs.length} tabs across ${windowSize} windows (${tabsPerWindow.toFixed(1)} tpw)</p>
+    // <${WindowList} ...${{windows: filteredWindows}} />
   }
 }
 
